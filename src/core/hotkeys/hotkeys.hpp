@@ -1,5 +1,6 @@
 #pragma once
 #include <atomic>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -16,6 +17,8 @@ namespace Soundux
 
             std::vector<int> pressedKeys;
             std::vector<int> keysToPress;
+            std::mutex pressedKeysMutex;
+            std::mutex keysToPressMutex;
 #if defined(_WIN32)
             std::thread keyPressThread;
             std::atomic<bool> shouldPressKeys = false;
@@ -31,6 +34,9 @@ namespace Soundux
 
             void onKeyUp(int);
             void onKeyDown(int);
+
+            void processKeyUp(int);
+            void processKeyDown(int);
 
             void pressKeys(const std::vector<int> &);
             void releaseKeys(const std::vector<int> &);

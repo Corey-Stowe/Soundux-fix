@@ -42,7 +42,20 @@ namespace Soundux
         }
         bool WinSound::setup()
         {
-            CoInitialize(nullptr);
+            //* Initialize COM as MTA (multi-threaded) instead of the STA that CoInitialize() implies.
+            //* The IMMDeviceEnumerator is used from multiple threads (the async getOutputs/getRecordingDevices
+            //* workers as well as the UI thread). More importantly: leaving this thread in STA breaks WebView2,
+            //* which initializes its own COM/DCOM state later on the same thread - the conflicting apartment
+            //* state caused a stack overflow in CreateWebViewEnvironmentWithOptionsInternal (DllCanUnloadNow
+            //* recursion + _chkstk). We must also CoUninitialize() again so the thread is left in a clean state.
+            auto coInitResult = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+            if (coInitResult == RPC_E_CHANGED_MODE)
+            {
+                //* The thread was already initialized as STA by someone else (e.g. WebView2). We can't change
+                //* the apartment now, but we can still use COM from this STA as long as we don't uninitialize it.
+                Fancy::fancy.logTime().warning() << "COM was already initialized on this thread" << std::endl;
+            }
+
             IMMDeviceEnumerator *rawEnumerator = nullptr;
             if (!FAILED(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_INPROC_SERVER,
                                          __uuidof(IMMDeviceEnumerator), reinterpret_cast<void **>(&rawEnumerator))))
@@ -83,13 +96,22 @@ namespace Soundux
                     }
                 }
 
+                //* Leave the thread's COM apartment in a clean state so that WebView2's environment creation
+                //* (which happens later on the same thread) doesn't collide with a stale apartment we set up.
+                //* Only balance the init if WE actually initialized it (S_OK). S_FALSE means COM was already
+                //* initialized by someone else - uninitializing then would tear down their apartment.
+                //* The enumerator is refcounted and stays alive for the lifetime of the app.
+                if (coInitResult == S_OK)
+                {
+                    CoUninitialize();
+                }
+
                 return true;
             }
 
             Fancy::fancy.logTime().failure() << "Failed to create enumerator" << std::endl;
             return false;
         }
-
         std::string Device::getGUID() const
         {
             return guid;

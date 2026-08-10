@@ -37,6 +37,11 @@ if (WIN32)
 
     target_compile_definitions(soundux PRIVATE WIN32_LEAN_AND_MEAN=1)
     target_compile_options(soundux PRIVATE /W4)
+
+    #* WebView2's in-process environment creation can overflow the default 1 MiB main-thread
+    #* stack (crash in CreateWebViewEnvironmentWithOptionsInternal with _chkstk "stack overflow"
+    #* on startup). Give the executable a larger stack reserve (8 MiB) + a sane commit size.
+    target_link_options(soundux PRIVATE /STACK:8388608,1048576)
 else()
     add_executable(soundux ${src})
 

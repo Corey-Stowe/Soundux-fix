@@ -136,6 +136,8 @@ namespace Soundux::Objects
             "moveTabs", [this](const std::vector<int> &newOrder) { return changeTabOrder(newOrder); }));
         webview->expose(Webview::Function("markFavorite", [this](const std::uint32_t &id, bool favorite) {
             Globals::gData.markFavorite(id, favorite);
+            Globals::gConfig.data.set(Globals::gData);
+            Globals::gConfig.save();
             return Globals::gData.getFavoriteIds();
         }));
         webview->expose(Webview::Function("getFavorites", [this] { return Globals::gData.getFavoriteIds(); }));
@@ -171,7 +173,29 @@ namespace Soundux::Objects
         webview->expose(Webview::Function("toggleSoundPlayback", [this]() { return toggleSoundPlayback(); }));
 
 #if !defined(__linux__)
-        webview->expose(Webview::Function("getOutputs", [this]() { return getOutputs(); }));
+        //* getOutputs() calls ma_context_init (WASAPI) which is deeply recursive and needs >=1 MB of stack.
+        //* std::async uses the CRT thread pool whose threads only get 64 KB, causing _chkstk stack overflow.
+        //* We spawn a dedicated Win32 thread with the default 1 MB stack instead.
+        webview->expose(Webview::AsyncFunction("getOutputs", [this](Webview::Promise promise) {
+            struct Ctx {
+                WebView *self;
+                Webview::Promise promise;
+            };
+            auto *ctx = new Ctx{this, promise};
+            HANDLE hThread = CreateThread(
+                nullptr, 0,
+                [](LPVOID param) -> DWORD {
+                    auto *c = static_cast<Ctx *>(param);
+                    c->promise.resolve(c->self->getOutputs());
+                    delete c;
+                    return 0;
+                },
+                ctx, 0, nullptr);
+            if (hThread)
+                CloseHandle(hThread);
+            else
+                promise.resolve(std::vector<AudioDevice>{}); // fallback: empty list
+        }));
 #endif
 #if defined(_WIN32)
         webview->expose(Webview::Function("openUrl", [](const std::string &url) {
@@ -196,47 +220,50 @@ namespace Soundux::Objects
 
             webview->exit();
         }));
-        webview->expose(Webview::Function("isVBCableProperlySetup", [] {
+        //* All of these touch CoreAudio/COM (IMMDeviceEnumerator) - keep them off the WebView2 UI thread.
+        webview->expose(Webview::AsyncFunction("isVBCableProperlySetup", [](Webview::Promise promise) {
             if (Globals::gWinSound)
             {
-                return Globals::gWinSound->isVBCableProperlySetup();
+                promise.resolve(Globals::gWinSound->isVBCableProperlySetup());
+                return;
             }
 
             Fancy::fancy.logTime().failure() << "Windows Sound Backend not found" << std::endl;
-            return false;
+            promise.resolve(false);
         }));
-        webview->expose(Webview::Function("setupVBCable", [](const std::string &micOverride) {
+        webview->expose(Webview::AsyncFunction("setupVBCable", [](Webview::Promise promise, const std::string &micOverride) {
             if (Globals::gWinSound)
             {
-                return Globals::gWinSound->setupVBCable(Globals::gWinSound->getRecordingDevice(micOverride));
+                promise.resolve(Globals::gWinSound->setupVBCable(Globals::gWinSound->getRecordingDevice(micOverride)));
+                return;
             }
 
             Fancy::fancy.logTime().failure() << "Windows Sound Backend not found" << std::endl;
-            return false;
+            promise.resolve(false);
         }));
-        webview->expose(Webview::Function(
-            "getRecordingDevices", []() -> std::pair<std::vector<RecordingDevice>, std::optional<RecordingDevice>> {
-                if (Globals::gWinSound)
+        webview->expose(Webview::AsyncFunction("getRecordingDevices", [](Webview::Promise promise) {
+            if (Globals::gWinSound)
+            {
+                auto devices = Globals::gWinSound->getRecordingDevices();
+                for (auto it = devices.begin(); it != devices.end();)
                 {
-                    auto devices = Globals::gWinSound->getRecordingDevices();
-                    for (auto it = devices.begin(); it != devices.end();)
+                    if (it->getName().find("VB-Audio") != std::string::npos)
                     {
-                        if (it->getName().find("VB-Audio") != std::string::npos)
-                        {
-                            it = devices.erase(it);
-                        }
-                        else
-                        {
-                            ++it;
-                        }
+                        it = devices.erase(it);
                     }
-
-                    return std::make_pair(devices, Globals::gWinSound->getMic());
+                    else
+                    {
+                        ++it;
+                    }
                 }
 
-                Fancy::fancy.logTime().failure() << "Windows Sound Backend not found" << std::endl;
-                return {};
-            }));
+                promise.resolve(std::make_pair(devices, Globals::gWinSound->getMic()));
+                return;
+            }
+
+            Fancy::fancy.logTime().failure() << "Windows Sound Backend not found" << std::endl;
+            promise.resolve(std::make_pair(std::vector<RecordingDevice>(), std::optional<RecordingDevice>()));
+        }));
 #endif
 #if defined(__linux__)
         webview->expose(Webview::Function("openUrl", [](const std::string &url) {

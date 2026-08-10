@@ -31,14 +31,47 @@ namespace Soundux::Objects
     {
         try
         {
+            std::filesystem::path configFile(path);
             if (!std::filesystem::exists(path))
             {
-                std::filesystem::path configFile(path);
                 std::filesystem::create_directories(configFile.parent_path());
             }
-            std::ofstream configFile(path);
-            configFile << nlohmann::json(*this).dump();
-            configFile.close();
+
+            //* Write to a temporary file first and move it in place afterwards, so that a crash or
+            //* full disk can never leave a half-written (empty) config behind that would later be
+            //* treated as "corrupted" and be overwritten with defaults.
+            auto tmpPath = configFile;
+            tmpPath += ".tmp";
+
+            {
+                std::ofstream configStream(tmpPath, std::ios::out | std::ios::trunc);
+                configStream << nlohmann::json(*this).dump();
+                configStream.flush();
+
+                if (!configStream.good())
+                {
+                    std::error_code ec;
+                    std::filesystem::remove(tmpPath, ec);
+                    Fancy::fancy.logTime().failure() << "Failed to write config: write error" << std::endl;
+                    return;
+                }
+            }
+
+            std::error_code ec;
+            std::filesystem::rename(tmpPath, configFile, ec);
+            if (ec)
+            {
+                //* Fallback for filesystems that do not allow renaming over an existing file.
+                std::filesystem::remove(configFile, ec);
+                ec.clear();
+                std::filesystem::rename(tmpPath, configFile, ec);
+                if (ec)
+                {
+                    Fancy::fancy.logTime().failure() << "Failed to write config: " << ec.message() << std::endl;
+                    return;
+                }
+            }
+
             Fancy::fancy.logTime().success() << "Config written" << std::endl;
         }
         catch (const std::exception &e)
@@ -67,7 +100,22 @@ namespace Soundux::Objects
             auto json = nlohmann::json::parse(content, nullptr, false);
             if (json.is_discarded())
             {
-                Fancy::fancy.logTime().failure() << "Config seems corrupted" << std::endl;
+                Fancy::fancy.logTime().failure() << "Config seems corrupted, moving it to a backup..." << std::endl;
+
+                //* Never silently overwrite the existing (possibly corrupted) config on exit.
+                std::error_code ec;
+                std::filesystem::path configFile(path);
+                std::filesystem::rename(
+                    path,
+                    configFile.parent_path() /
+                        ("config_corrupted_" +
+                         std::to_string(std::chrono::system_clock::now().time_since_epoch().count()) + ".json"),
+                    ec);
+                if (ec)
+                {
+                    Fancy::fancy.logTime().warning()
+                        << "Failed to backup corrupted config: " << ec.message() << std::endl;
+                }
             }
             else
             {
@@ -76,12 +124,13 @@ namespace Soundux::Objects
                     auto conf = json.get<Config>();
                     data.set(conf.data);
                     settings = conf.settings;
-                    Fancy::fancy.logTime().success() << "Config read" << std::endl;
+                    Fancy::fancy.logTime().success()
+                        << "Config read: " << data.getTabs().size() << " tab(s)" << std::endl;
                 }
-                catch (...)
+                catch (const std::exception &e)
                 {
                     Fancy::fancy.logTime().warning()
-                        << "Found possibly old config format, moving old config..." << std::endl;
+                        << "Found possibly old config format (" << e.what() << "), moving old config..." << std::endl;
 
                     std::filesystem::path configFile(path);
                     std::filesystem::rename(

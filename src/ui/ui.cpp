@@ -49,7 +49,6 @@ namespace Soundux::Objects
                         file = std::filesystem::canonical(path / file);
                     }
                 }
-
                 auto extension = file.extension().u8string();
                 std::transform(extension.begin(), extension.end(), extension.begin(),
                                [](char c) { return std::tolower(c); });
@@ -122,8 +121,12 @@ namespace Soundux::Objects
             return rtn;
         }
 
-        Fancy::fancy.logTime().warning() << "Path " >> tab.path << " does not exist" << std::endl;
-        return {};
+        //* The folder might just be temporarily unavailable (e.g. external drive not mounted yet).
+        //* Keep the sounds (and their hotkeys) instead of wiping them and later saving an empty tab.
+        Fancy::fancy.logTime().warning() << "Path " >> tab.path
+                                         << " does not exist (drive not mounted?), keeping previous sounds"
+                                         << std::endl;
+        return tab.sounds;
     }
     std::vector<Tab> Window::addTab()
     {
@@ -168,6 +171,8 @@ namespace Soundux::Objects
                     rootTab.name = std::filesystem::path(rootPath).filename().u8string();
 
                     tabs.emplace_back(Globals::gData.addTab(std::move(rootTab)));
+                    Globals::gConfig.data.set(Globals::gData);
+                    Globals::gConfig.save();
                 }
 
                 for (const auto &entry : std::filesystem::directory_iterator(path))
@@ -472,6 +477,8 @@ namespace Soundux::Objects
     std::vector<Tab> Window::removeTab(const std::uint32_t &id)
     {
         Globals::gData.removeTabById(id);
+        Globals::gConfig.data.set(Globals::gData);
+        Globals::gConfig.save();
         return Globals::gData.getTabs();
     }
     bool Window::stopSound(const std::uint32_t &id)
@@ -547,6 +554,8 @@ namespace Soundux::Objects
                 }
             }
 
+            Globals::gConfig.data.set(Globals::gData);
+            Globals::gConfig.save();
             return *sound;
         }
 
@@ -571,6 +580,8 @@ namespace Soundux::Objects
                 }
             }
 
+            Globals::gConfig.data.set(Globals::gData);
+            Globals::gConfig.save();
             return *sound;
         }
 
@@ -712,6 +723,8 @@ namespace Soundux::Objects
             }
         }
 #endif
+        Globals::gConfig.settings = Globals::gSettings;
+        Globals::gConfig.save();
         return Globals::gSettings;
     }
     void Window::onHotKeyReceived([[maybe_unused]] const std::vector<int> &keys)
@@ -744,6 +757,8 @@ namespace Soundux::Objects
             auto newTab = Globals::gData.setTab(id, *tab);
             if (newTab)
             {
+                Globals::gConfig.data.set(Globals::gData);
+                Globals::gConfig.save();
                 return newTab;
             }
         }
@@ -759,6 +774,8 @@ namespace Soundux::Objects
         if (sound)
         {
             sound->get().hotkeys = hotkeys;
+            Globals::gConfig.data.set(Globals::gData);
+            Globals::gConfig.save();
             return sound->get();
         }
         Fancy::fancy.logTime().failure() << "Failed to set hotkey for sound " << id << ", sound does not exist"
@@ -776,6 +793,8 @@ namespace Soundux::Objects
             newTabs.emplace_back(*Globals::gData.getTab(tabId));
         }
         Globals::gData.setTabs(newTabs);
+        Globals::gConfig.data.set(Globals::gData);
+        Globals::gConfig.save();
         return Globals::gData.getTabs();
     }
 #if defined(__linux__)
