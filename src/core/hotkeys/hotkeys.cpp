@@ -25,11 +25,13 @@ namespace Soundux
         }
         void Hotkeys::shouldNotify(bool status)
         {
+            std::lock_guard<std::mutex> lock(pressedKeysMutex);
             pressedKeys.clear();
             notify = status;
         }
-        void Hotkeys::onKeyUp(int key)
+        void Hotkeys::processKeyUp(int key)
         {
+            std::lock_guard<std::mutex> lock(pressedKeysMutex);
             if (notify && !pressedKeys.empty() &&
                 std::find(pressedKeys.begin(), pressedKeys.end(), key) != pressedKeys.end())
             {
@@ -97,19 +99,26 @@ namespace Soundux
             }
             return rtn;
         }
-        void Hotkeys::onKeyDown(int key)
+        void Hotkeys::processKeyDown(int key)
         {
-            if (std::find(keysToPress.begin(), keysToPress.end(), key) != keysToPress.end())
             {
-                return;
+                std::lock_guard<std::mutex> pressLock(keysToPressMutex);
+                if (std::find(keysToPress.begin(), keysToPress.end(), key) != keysToPress.end())
+                {
+                    return;
+                }
             }
-            if (std::find(pressedKeys.begin(), pressedKeys.end(), key) == pressedKeys.end())
+
             {
-                pressedKeys.emplace_back(key);
-            }
-            else
-            {
-                return;
+                std::lock_guard<std::mutex> lock(pressedKeysMutex);
+                if (std::find(pressedKeys.begin(), pressedKeys.end(), key) == pressedKeys.end())
+                {
+                    pressedKeys.emplace_back(key);
+                }
+                else
+                {
+                    return;
+                }
             }
 
             if (notify)
@@ -117,6 +126,7 @@ namespace Soundux
                 return;
             }
 
+            std::lock_guard<std::mutex> lock(pressedKeysMutex);
             if (!Globals::gSettings.stopHotkey.empty() && (pressedKeys == Globals::gSettings.stopHotkey ||
                                                            isCloseMatch(pressedKeys, Globals::gSettings.stopHotkey)))
             {
@@ -170,5 +180,17 @@ namespace Soundux
             }
             return "";
         }
+#if !defined(_WIN32)
+        //* On Windows these are implemented in hotkeys/windows/windows.cpp by
+        //* posting messages to the listener thread instead of processing directly.
+        void Hotkeys::onKeyDown(int key)
+        {
+            processKeyDown(key);
+        }
+        void Hotkeys::onKeyUp(int key)
+        {
+            processKeyUp(key);
+        }
+#endif
     } // namespace Objects
 } // namespace Soundux

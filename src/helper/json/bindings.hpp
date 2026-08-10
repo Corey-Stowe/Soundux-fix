@@ -153,22 +153,34 @@ namespace nlohmann
         {
             if (j.find(key) != j.end())
             {
-                if constexpr (Soundux::traits::is_optional<T>::value)
+                try
                 {
-                    if (j.at(key).type_name() == nlohmann::basic_json(typename T::value_type{}).type_name())
+                    if constexpr (Soundux::traits::is_optional<T>::value)
                     {
-                        if (!j.at(key).is_null())
+                        if (j.at(key).type_name() == nlohmann::basic_json(typename T::value_type{}).type_name())
                         {
-                            member = j.at(key).get<typename T::value_type>();
+                            if (!j.at(key).is_null())
+                            {
+                                member = j.at(key).get<typename T::value_type>();
+                            }
+                        }
+                    }
+                    else
+                    {
+                        if (j.at(key).type_name() == nlohmann::basic_json(T{}).type_name())
+                        {
+                            j.at(key).get_to(member);
                         }
                     }
                 }
-                else
+                catch (const std::exception &e)
                 {
-                    if (j.at(key).type_name() == nlohmann::basic_json(T{}).type_name())
-                    {
-                        j.at(key).get_to(member);
-                    }
+                    //* Never let a malformed value from the frontend crash the app - skip it and keep the default.
+                    fprintf(stderr, "get_to_safe(%s) failed: %s\n", key.c_str(), e.what());
+                }
+                catch (...)
+                {
+                    fprintf(stderr, "get_to_safe(%s) failed (unknown)\n", key.c_str());
                 }
             }
         }
