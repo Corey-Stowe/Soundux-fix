@@ -32,6 +32,11 @@ namespace Soundux
 
             std::vector<Sound> sounds;
             Enums::SortMode sortMode = Enums::SortMode::ModifiedDate_Descending;
+
+            //* Online tab: sounds are streamed/downloaded from the internet.
+            //* When true, setup() skips folder scanning for this tab.
+            bool isOnline = false;
+            std::string onlineSource; //* e.g. "myinstants"
         };
     } // namespace Objects
 } // namespace Soundux

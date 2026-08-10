@@ -9,6 +9,8 @@
 #include <helper/systeminfo/systeminfo.hpp>
 #include <helper/version/check.hpp>
 #include <helper/ytdl/youtube-dl.hpp>
+#include <helper/myinstants/myinstants.hpp>
+#include <thread>
 
 #ifdef _WIN32
 #include "../../assets/icon.h"
@@ -171,6 +173,104 @@ namespace Soundux::Objects
                                               return setCustomRemoteVolume(id, volume);
                                           }));
         webview->expose(Webview::Function("toggleSoundPlayback", [this]() { return toggleSoundPlayback(); }));
+
+        //* MyInstants search (HTML scrape) - dedicated thread for large stack.
+        webview->expose(Webview::AsyncFunction("myInstantsSearch",
+            [this](Webview::Promise promise, const std::string &query, int page) {
+                struct Ctx { WebView *self; Webview::Promise promise; std::string query; int page; };
+                auto *ctx = new Ctx{this, promise, query, page};
+#if defined(_WIN32)
+                HANDLE h = CreateThread(nullptr, 0, [](LPVOID p) -> DWORD {
+                    auto *c = static_cast<Ctx *>(p);
+                                        auto results = MyInstants::search(c->query, c->page);
+                    nlohmann::json j = nlohmann::json::array();
+                    for (const auto &r : results)
+                        j.push_back({{"name", r.name}, {"slug", r.slug}, {"mp3Url", r.mp3Url}});
+                    c->promise.resolve(j);
+                    delete c; return 0;
+                }, ctx, 0, nullptr);
+                if (h) CloseHandle(h); else promise.resolve(nlohmann::json::array());
+#else
+                std::thread([ctx] {
+                                        auto results = MyInstants::search(ctx->query, ctx->page);
+                    nlohmann::json j = nlohmann::json::array();
+                    for (const auto &r : results)
+                        j.push_back({{"name", r.name}, {"slug", r.slug}, {"mp3Url", r.mp3Url}});
+                    ctx->promise.resolve(j);
+                    delete ctx;
+                }).detach();
+#endif
+            }));
+        //* MyInstants list (JSON API).
+        webview->expose(Webview::AsyncFunction("myInstantsList",
+            [this](Webview::Promise promise, int page) {
+                struct Ctx { WebView *self; Webview::Promise promise; int page; };
+                auto *ctx = new Ctx{this, promise, page};
+#if defined(_WIN32)
+                HANDLE h = CreateThread(nullptr, 0, [](LPVOID p) -> DWORD {
+                    auto *c = static_cast<Ctx *>(p);
+                                        auto results = MyInstants::list(c->page);
+                    nlohmann::json j = nlohmann::json::array();
+                    for (const auto &r : results)
+                        j.push_back({{"name", r.name}, {"slug", r.slug}, {"mp3Url", r.mp3Url}});
+                    c->promise.resolve(j);
+                    delete c; return 0;
+                }, ctx, 0, nullptr);
+                if (h) CloseHandle(h); else promise.resolve(nlohmann::json::array());
+#else
+                std::thread([ctx] {
+                                        auto results = MyInstants::list(ctx->page);
+                    nlohmann::json j = nlohmann::json::array();
+                    for (const auto &r : results)
+                        j.push_back({{"name", r.name}, {"slug", r.slug}, {"mp3Url", r.mp3Url}});
+                    ctx->promise.resolve(j);
+                    delete ctx;
+                }).detach();
+#endif
+            }));
+        //* Preview an online sound (download to cache, play).
+        webview->expose(Webview::AsyncFunction("playOnlineSound",
+            [this](Webview::Promise promise, const std::string &slug, const std::string &mp3Url) {
+                struct Ctx { WebView *self; Webview::Promise promise; std::string slug; std::string mp3Url; };
+                auto *ctx = new Ctx{this, promise, slug, mp3Url};
+#if defined(_WIN32)
+                HANDLE h = CreateThread(nullptr, 0, [](LPVOID p) -> DWORD {
+                    auto *c = static_cast<Ctx *>(p);
+                    auto r = c->self->playOnlineSound(c->slug, c->mp3Url);
+                    if (r) c->promise.resolve(*r); else c->promise.discard();
+                    delete c; return 0;
+                }, ctx, 0, nullptr);
+                if (h) CloseHandle(h); else promise.discard();
+#else
+                std::thread([ctx] {
+                    auto r = ctx->self->playOnlineSound(ctx->slug, ctx->mp3Url);
+                    if (r) ctx->promise.resolve(*r); else ctx->promise.discard();
+                    delete ctx;
+                }).detach();
+#endif
+            }));
+        //* Permanently save an online sound.
+        webview->expose(Webview::AsyncFunction("saveOfflineSound",
+            [this](Webview::Promise promise, const std::string &slug,
+                   const std::string &mp3Url, const std::string &name) {
+                struct Ctx { WebView *self; Webview::Promise promise; std::string slug, mp3Url, name; };
+                auto *ctx = new Ctx{this, promise, slug, mp3Url, name};
+#if defined(_WIN32)
+                HANDLE h = CreateThread(nullptr, 0, [](LPVOID p) -> DWORD {
+                    auto *c = static_cast<Ctx *>(p);
+                    auto r = c->self->saveOfflineSound(c->slug, c->mp3Url, c->name);
+                    if (r) c->promise.resolve(*r); else c->promise.discard();
+                    delete c; return 0;
+                }, ctx, 0, nullptr);
+                if (h) CloseHandle(h); else promise.discard();
+#else
+                std::thread([ctx] {
+                    auto r = ctx->self->saveOfflineSound(ctx->slug, ctx->mp3Url, ctx->name);
+                    if (r) ctx->promise.resolve(*r); else ctx->promise.discard();
+                    delete ctx;
+                }).detach();
+#endif
+            }));
 
 #if !defined(__linux__)
         //* getOutputs() calls ma_context_init (WASAPI) which is deeply recursive and needs >=1 MB of stack.

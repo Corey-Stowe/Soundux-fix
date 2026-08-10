@@ -251,7 +251,8 @@ namespace nlohmann
     {
         static void to_json(json &j, const Soundux::Objects::Config &obj)
         {
-            j = {{"data", obj.data}, {"settings", obj.settings}};
+            j = {{"data", obj.data}, {"settings", obj.settings},
+                 {"cachePath", obj.cachePath}, {"offlineSoundsPath", obj.offlineSoundsPath}};
         }
         static void from_json(const json &j, Soundux::Objects::Config &obj)
         {

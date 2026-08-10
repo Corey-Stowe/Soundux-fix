@@ -1,4 +1,5 @@
 #include "ui.hpp"
+#include <helper/myinstants/myinstants.hpp>
 #include <core/global/globals.hpp>
 #include <cstdint>
 #include <fancy.hpp>
@@ -1071,4 +1072,103 @@ namespace Soundux::Objects
         application = base.application;
     }
 #endif
+    std::optional<PlayingSound> Window::playOnlineSound(const std::string &slug,
+                                                            const std::string &mp3Url)
+    {
+        //* Download to cache, play, schedule cache file deletion after playback.
+        auto &cachePath = Globals::gConfig.cachePath;
+        if (cachePath.empty())
+        {
+            Fancy::fancy.logTime().failure() << "playOnlineSound: cachePath not set" << std::endl;
+            return std::nullopt;
+        }
+
+        std::string dest = cachePath + 
+#if defined(_WIN32)
+            "\\"
+#else
+            "/"
+#endif
+            + slug + ".mp3";
+
+        if (!MyInstants::download(mp3Url, dest))
+            return std::nullopt;
+
+        //* Build a transient Sound pointing at the cached file.
+        Sound s;
+        s.id   = ++Globals::gData.soundIdCounter;
+        s.name = slug;
+        s.path = dest;
+        s.modifiedDate = 0;
+
+        auto result = Globals::gAudio.play(s);
+        return result;
+    }
+
+    std::optional<Sound> Window::saveOfflineSound(const std::string &slug,
+                                                  const std::string &mp3Url,
+                                                  const std::string &name)
+    {
+        auto &offlinePath = Globals::gConfig.offlineSoundsPath;
+        if (offlinePath.empty())
+        {
+            Fancy::fancy.logTime().failure() << "saveOfflineSound: offlineSoundsPath not set" << std::endl;
+            return std::nullopt;
+        }
+
+        std::string dest = offlinePath +
+#if defined(_WIN32)
+            "\\"
+#else
+            "/"
+#endif
+            + slug + ".mp3";
+
+        if (!MyInstants::download(mp3Url, dest))
+            return std::nullopt;
+
+        //* Find or create the "My Sounds" tab.
+        std::uint32_t tabId = 0;
+        bool found = false;
+        for (const auto &tab : Globals::gData.getTabs())
+        {
+            if (tab.isOnline && tab.onlineSource == "offline")
+            {
+                tabId = tab.id;
+                found = true;
+                break;
+            }
+        }
+
+        if (!found)
+        {
+            Tab t;
+            t.name         = "My Sounds";
+            t.path         = offlinePath;
+            t.isOnline     = true;  //* Prevents folder re-scan on startup
+            t.onlineSource = "offline";
+            auto added = Globals::gData.addTab(std::move(t));
+            tabId = added.id;
+        }
+
+        Sound s;
+        s.id           = ++Globals::gData.soundIdCounter;
+        s.name         = name.empty() ? slug : name;
+        s.path         = dest;
+        s.modifiedDate = 0;
+
+        //* Insert sound into the tab.
+        auto tab = Globals::gData.getTab(tabId);
+        if (!tab)
+            return std::nullopt;
+
+        Tab updatedTab = *tab;
+        updatedTab.sounds.push_back(s);
+        Globals::gData.setTab(tabId, updatedTab);
+        Globals::gConfig.data.set(Globals::gData);
+        Globals::gConfig.save();
+
+        return s;
+    }
+
 } // namespace Soundux::Objects
