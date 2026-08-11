@@ -1083,13 +1083,19 @@ namespace Soundux::Objects
             return std::nullopt;
         }
 
-        std::string dest = cachePath + 
+        //* Normalize the trailing separator and make sure the folder exists.
+        const char sep =
 #if defined(_WIN32)
-            "\\"
+            '\\';
 #else
-            "/"
+            '/';
 #endif
-            + slug + ".mp3";
+        if (!cachePath.empty() && cachePath.back() != '/' && cachePath.back() != '\\')
+            cachePath += sep;
+        std::error_code ec;
+        std::filesystem::create_directories(cachePath, ec);
+
+        std::string dest = cachePath + slug + ".mp3";
 
         if (!MyInstants::download(mp3Url, dest))
             return std::nullopt;
@@ -1116,13 +1122,19 @@ namespace Soundux::Objects
             return std::nullopt;
         }
 
-        std::string dest = offlinePath +
+        //* Normalize the trailing separator and make sure the folder exists.
+        const char sep =
 #if defined(_WIN32)
-            "\\"
+            '\\';
 #else
-            "/"
+            '/';
 #endif
-            + slug + ".mp3";
+        if (!offlinePath.empty() && offlinePath.back() != '/' && offlinePath.back() != '\\')
+            offlinePath += sep;
+        std::error_code ec;
+        std::filesystem::create_directories(offlinePath, ec);
+
+        std::string dest = offlinePath + slug + ".mp3";
 
         if (!MyInstants::download(mp3Url, dest))
             return std::nullopt;

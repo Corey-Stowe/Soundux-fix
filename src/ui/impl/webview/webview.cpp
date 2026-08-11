@@ -297,6 +297,40 @@ namespace Soundux::Objects
                 promise.resolve(std::vector<AudioDevice>{}); // fallback: empty list
         }));
 #endif
+
+        //* Online sound save path (Settings): where saved sounds land on disk.
+        webview->expose(Webview::Function("getOnlineSoundsPath",
+                                          []() { return Globals::gConfig.offlineSoundsPath; }));
+        webview->expose(Webview::Function("setOnlineSoundsPath", [](const std::string &path) {
+            auto normalized = path;
+            //* Trim whitespace and strip any surrounding quotes.
+            while (!normalized.empty() &&
+                   (normalized.front() == ' ' || normalized.front() == '"' || normalized.front() == '\''))
+            {
+                normalized.erase(normalized.begin());
+            }
+            while (!normalized.empty() &&
+                   (normalized.back() == ' ' || normalized.back() == '"' || normalized.back() == '\''))
+            {
+                normalized.pop_back();
+            }
+            //* Normalize separators so the UI/config stays consistent.
+#if defined(_WIN32)
+            for (auto &c : normalized)
+            {
+                if (c == '\\')
+                    c = '/';
+            }
+#endif
+            if (!normalized.empty() && normalized.back() != '/')
+            {
+                normalized += '/';
+            }
+            Globals::gConfig.offlineSoundsPath = normalized;
+            Globals::gConfig.save();
+            return Globals::gConfig.offlineSoundsPath;
+        }));
+
 #if defined(_WIN32)
         webview->expose(Webview::Function("openUrl", [](const std::string &url) {
             ShellExecuteA(nullptr, nullptr, url.c_str(), nullptr, nullptr, SW_SHOW);
