@@ -215,7 +215,9 @@ namespace nlohmann
                  {"name", obj.name},
                  {"path", obj.path},
                  {"sounds", obj.sounds},
-                 {"sortMode", obj.sortMode}};
+                 {"sortMode", obj.sortMode},
+                 {"isOnline", obj.isOnline},
+                 {"onlineSource", obj.onlineSource}};
         }
         static void from_json(const json &j, Soundux::Objects::Tab &obj)
         {
@@ -227,6 +229,14 @@ namespace nlohmann
             if (j.find("sortMode") != j.end())
             {
                 j.at("sortMode").get_to(obj.sortMode);
+            }
+            if (j.find("isOnline") != j.end())
+            {
+                j.at("isOnline").get_to(obj.isOnline);
+            }
+            if (j.find("onlineSource") != j.end())
+            {
+                j.at("onlineSource").get_to(obj.onlineSource);
             }
         }
     };
@@ -251,12 +261,29 @@ namespace nlohmann
     {
         static void to_json(json &j, const Soundux::Objects::Config &obj)
         {
-            j = {{"data", obj.data}, {"settings", obj.settings}};
+            j = {{"data", obj.data}, {"settings", obj.settings},
+                 {"cachePath", obj.cachePath}, {"offlineSoundsPath", obj.offlineSoundsPath}};
         }
         static void from_json(const json &j, Soundux::Objects::Config &obj)
         {
             j.at("data").get_to(obj.data);
             j.at("settings").get_to(obj.settings);
+            try
+            {
+                if (j.contains("cachePath"))
+                    j.at("cachePath").get_to(obj.cachePath);
+            }
+            catch (...)
+            {
+            }
+            try
+            {
+                if (j.contains("offlineSoundsPath"))
+                    j.at("offlineSoundsPath").get_to(obj.offlineSoundsPath);
+            }
+            catch (...)
+            {
+            }
         }
     };
     template <> struct adl_serializer<Soundux::Objects::VersionStatus>

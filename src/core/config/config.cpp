@@ -1,5 +1,6 @@
 #include "config.hpp"
 #include <chrono>
+#include <cstdlib>
 #include <fancy.hpp>
 #include <filesystem>
 #include <fstream>
@@ -26,6 +27,46 @@ namespace Soundux::Objects
         return rtn;
 #endif
     }();
+
+    std::string Config::defaultCachePath()
+    {
+#if defined(__linux__)
+        if (const auto *cache = std::getenv("XDG_CACHE_HOME"); cache && *cache) // NOLINT
+        {
+            return std::string(cache) + "/Soundux/cache/";
+        }
+        return std::string(std::getenv("HOME")) + "/.cache/Soundux/cache/"; // NOLINT
+#elif defined(_WIN32)
+        char *buffer = nullptr;
+        std::size_t size = 0;
+        _dupenv_s(&buffer, &size, "APPDATA");
+        //* Forward slashes match the app's own path convention and avoid escaping pitfalls.
+        auto rtn = std::string(buffer ? buffer : "") + "/Soundux/cache/";
+        free(buffer);
+
+        return rtn;
+#endif
+    }
+
+    std::string Config::defaultOfflinePath()
+    {
+#if defined(__linux__)
+        if (const auto *data = std::getenv("XDG_DATA_HOME"); data && *data) // NOLINT
+        {
+            return std::string(data) + "/Soundux/sounds/";
+        }
+        return std::string(std::getenv("HOME")) + "/.local/share/Soundux/sounds/"; // NOLINT
+#elif defined(_WIN32)
+        char *buffer = nullptr;
+        std::size_t size = 0;
+        _dupenv_s(&buffer, &size, "APPDATA");
+        //* Forward slashes match the app's own path convention and avoid escaping pitfalls.
+        auto rtn = std::string(buffer ? buffer : "") + "/Soundux/sounds/";
+        free(buffer);
+
+        return rtn;
+#endif
+    }
 
     void Config::save()
     {

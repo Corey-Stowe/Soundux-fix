@@ -93,6 +93,13 @@ namespace Soundux
             virtual std::optional<Sound> setCustomRemoteVolume(const std::uint32_t &, const std::optional<int> &);
 
           public:
+            //* Preview an online sound: download to cache, play.
+            virtual std::optional<PlayingSound> playOnlineSound(const std::string &slug, const std::string &mp3Url);
+            //* Permanently save an online sound to offlineSoundsPath.
+            virtual std::optional<Sound> saveOfflineSound(const std::string &slug,
+                                                          const std::string &mp3Url,
+                                                          const std::string &name);
+
             virtual ~Window();
             virtual void setup();
             virtual void show() = 0;
